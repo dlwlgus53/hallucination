@@ -2,13 +2,15 @@ import os
 import json
 import argparse
 import copy
+import pdb
+
+
 from collections import defaultdict
 from tqdm import tqdm
-from utils.helper import SpeedLimitTimer, PreviousStateRecorder
+from utils.helper import PreviousStateRecorder
 from utils.typo_fix import typo_fix
 from config import CONFIG
-
-from codex_completion import codex_completion
+from codegen_completion import codegen_check_over_length, codegen_completion
 from utils.sql import sql_pred_parse, sv_dict_to_string
 from prompting import get_prompt, conversion, table_prompt
 from retriever.code.embed_based_retriever import EmbeddingRetriever
@@ -20,7 +22,7 @@ parser.add_argument('--train_fn', type=str, help="training data file (few-shot o
                     required=True)  # e.g. "./data/mw21_10p_train_v3.json"
 # "./retriever/expts/mw21_10p_v3_0304_400_20"
 parser.add_argument('--retriever_dir', type=str, required=True,
-                    help="sentence transformer saved path")
+                    help="sentence transformer model, npy saved path")
 parser.add_argument('--retriever_model', type=str, required=False,
                     help="sentence transformer model saved path")
 parser.add_argument('--output_dir', type=str, default="./expts/debug",
@@ -29,8 +31,6 @@ parser.add_argument('--mwz_ver', type=str, default="2.1",
                     choices=['2.1', '2.4'], help="version of MultiWOZ")
 parser.add_argument('--test_fn', type=str, default='',
                     help="file to evaluate on, empty means use the test set")
-parser.add_argument('--num_examples', type=int, default='5',
-                    help="number of examples to retrieve")
 args = parser.parse_args()
 
 # create the output folder
@@ -39,7 +39,11 @@ os.makedirs(args.output_dir, exist_ok=True)
 with open(os.path.join(args.output_dir, "exp_config.json"), 'w') as f:
     json.dump(vars(args), f, indent=4)
 
-NUM_EXAMPLE = args.num_examples
+NUM_EXAMPLE = 5
+
+# set up the completion function
+complete_fn = codegen_completion
+check_overlen_fn = codegen_check_over_length
 
 # read the selection pool
 with open(args.train_fn) as f:
@@ -79,9 +83,6 @@ def run(test_set, turn=-1, use_gold=False):
     # turn = 1 means evalute two-turn dialogues... etc.
     # when use_gold = True, the context are gold context (for analysis purpose)
 
-    # openai limitation 20 queries/min
-    timer = SpeedLimitTimer(second_per_step=3.1)
-
     result_dict = defaultdict(list)  # use to record the accuracy
 
     selected_set = test_set
@@ -106,6 +107,7 @@ def run(test_set, turn=-1, use_gold=False):
         n_total += 1
 
         completion = ""
+        pdb.set_trace()
         if use_gold:
             prompt_text = get_prompt(
                 data_item, examples=retriever.item_to_nearest_examples(data_item, k=NUM_EXAMPLE))
@@ -124,35 +126,20 @@ def run(test_set, turn=-1, use_gold=False):
         # record the prompt
         data_item['prompt'] = prompt_text
 
-        # codex completion
-        complete_flag = False
-        parse_error_count = 0
-        while not complete_flag:
-            try:
-                completion = codex_completion(prompt_text)
-                # convert back the sql completion result
-                completion = conversion(completion, reverse=True)
-            except Exception as e:
-                if e.user_message.startswith("This model's maximum context length"):
-                    print("prompt overlength")
-                    examples = examples[1:]
-                    prompt_text = get_prompt(
-                        data_item, examples=examples, given_context=predicted_context)
-                else:
-                    # throughput too high
-                    timer.sleep(10)
-            else:
-                try:
-                    # check if CODEX is crazy
-                    temp_parse = sql_pred_parse(completion)
-                except:
-                    parse_error_count += 1
-                    if parse_error_count >= 5:
-                        complete_flag = True
-                else:
-                    complete_flag = True
-            # limit query speed
-            timer.step()
+        # completion
+        overlen_flag = True
+        while overlen_flag:
+            prompt_text = get_prompt(
+                data_item, examples=examples, given_context=predicted_context)
+            overlen_flag = check_overlen_fn(prompt_text)
+
+            # reduce the number of examples if overlength
+            if overlen_flag:
+                print("prompt overlength")
+                examples = examples[1:]
+
+        completion = complete_fn(prompt_text)
+        completion = conversion(completion, reverse=True)
 
         # aggregate the prediction and the history states
         predicted_slot_values = {}

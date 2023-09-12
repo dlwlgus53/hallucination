@@ -9,13 +9,18 @@ from index_based_retriever import IndexRetriever
 from embed_based_retriever import EmbeddingRetriever, input_to_string
 from retriever_evaluation import evaluate_retriever_on_dataset, compute_sv_sim
 from st_evaluator import RetrievalEvaluator
-
+import os
 # input arguments
 parser = argparse.ArgumentParser()
-parser.add_argument('--train_fn', type=str, required=True, help="training data file (few-shot or full shot)")  # e.g. "../../data/mw21_10p_train_v3.json"
-parser.add_argument('--save_name', type=str, required=True, help="sentence transformer save path")  # e.g. mw21_10p_v3
-parser.add_argument('--pretrained_index_dir', type=str, default="all_mpnet_base_v2", help="directory of pretrained embeddings")  
-parser.add_argument('--pretrained_model', type=str, default='sentence-transformers/all-mpnet-base-v2', help="embedding model to finetune with")
+# e.g. "../../data/mw21_10p_train_v3.json"
+parser.add_argument('--train_fn', type=str, required=True,
+                    help="training data file (few-shot or full shot)")
+parser.add_argument('--save_name', type=str, required=True,
+                    help="sentence transformer save path")  # e.g. mw21_10p_v3
+parser.add_argument('--pretrained_index_dir', type=str,
+                    default="all_mpnet_base_v2", help="directory of pretrained embeddings")
+parser.add_argument('--pretrained_model', type=str,
+                    default='sentence-transformers/all-mpnet-base-v2', help="embedding model to finetune with")
 parser.add_argument('--epoch', type=int, default=15)
 parser.add_argument('--topk', type=int, default=10)
 parser.add_argument('--toprange', type=int, default=200)
@@ -51,7 +56,6 @@ pretrained_train_retriever = IndexRetriever(datasets=[train_set],
 )
 
 
-
 class MWDataset:
 
     def __init__(self, mw_json_fn,  just_embed_all=False):
@@ -62,11 +66,9 @@ class MWDataset:
         with open(mw_json_fn, 'r') as f:
             data = json.load(f)
 
-        
         self.turn_labels = []  # store [SMUL1843.json_turn_1, ]
         self.turn_utts = []  # store corresponding text
         self.turn_states = []  # store corresponding states. [['attraction-type-mueseum',],]
-
 
         for turn in data:
             # filter the domains that not belongs to the test domain
@@ -88,12 +90,11 @@ class MWDataset:
             current_state = turn["turn_slot_values"]
             # convert to list of strings
             current_state = [self.important_value_to_string(s, v) for s, v in current_state.items()
-                                if s.split('-')[0] in DOMAINS]
+                             if s.split('-')[0] in DOMAINS]
 
             self.turn_labels.append(f"{turn['ID']}_turn_{turn['turn_id']}")
             self.turn_utts.append(history)
             self.turn_states.append(current_state)
-
 
         self.n_turns = len(self.turn_labels)
         print(f"there are {self.n_turns} turns in this dataset")
@@ -240,14 +241,16 @@ evaluator = RetrievalEvaluator(TRAIN_FN, f1_train_set)
 
 # training
 train_loss = losses.OnlineContrastiveLoss(model)
-model.fit(train_objectives=[(train_dataloader, train_loss)], epochs=EPOCH, warmup_steps=100,
-          evaluator=evaluator, evaluation_steps=(len(train_dataloader) // 300 + 1)*100,
-          output_path=SAVE_PATH)
+# model.fit(train_objectives=[(train_dataloader, train_loss)], epochs=EPOCH, warmup_steps=100,
+#           evaluator=evaluator, evaluation_steps=(
+#               len(train_dataloader) // 300 + 1)*100,
+#           output_path=SAVE_PATH)
 
 # load best model
-model = SentenceTransformer(SAVE_PATH, device="cuda:0")
+model = SentenceTransformer(SAVE_PATH, device="cuda")
 
-full_train_set = MWDataset("../../data/mw21_100p_train.json", just_embed_all=True)
+full_train_set = MWDataset(
+    "../../data/mw21_100p_train.json", just_embed_all=True)
 
 store_embed(full_train_set, f"{SAVE_PATH}/train_index.npy")
 

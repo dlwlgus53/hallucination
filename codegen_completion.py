@@ -5,8 +5,8 @@ import random
 import argparse
 import torch
 from transformers import GPT2TokenizerFast
-from CodeGen.jaxformer.hf.codegen.modeling_codegen import CodeGenForCausalLM
-
+# from CodeGen.jaxformer.hf.codegen.modeling_codegen import CodeGenForCausalLM
+from transformers import AutoTokenizer, CodeGenForCausalLM
 device = -1
 if torch.cuda.is_available():
     device = 0
@@ -179,7 +179,7 @@ def test_truncate():
 model_name = "codegen-2B-mono"
 
 set_seed(42, deterministic=True)
-device = torch.device('cuda:0')
+device = torch.device('cuda')
 ckpt = f'./CodeGen/checkpoints/{model_name}'
 
 # load model
@@ -192,6 +192,8 @@ with print_time('loading tokenizer'):
     tokenizer.pad_token = 50256
 
 # if the input is over maximum length, return True
+
+
 def codegen_check_over_length(prompt, report_len=False):
     input_ids = tokenizer(prompt)['input_ids']
     if report_len:

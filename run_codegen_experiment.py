@@ -7,7 +7,6 @@ from tqdm import tqdm
 from utils.helper import PreviousStateRecorder
 from utils.typo_fix import typo_fix
 from config import CONFIG
-
 from codegen_completion import codegen_check_over_length, codegen_completion
 from utils.sql import sql_pred_parse, sv_dict_to_string
 from prompting import get_prompt, conversion, table_prompt
@@ -16,12 +15,21 @@ from evaluate_metrics import evaluate
 
 # input arguments
 parser = argparse.ArgumentParser()
-parser.add_argument('--train_fn', type=str, help="training data file (few-shot or full shot)", required=True)  # e.g. "./data/mw21_10p_train_v3.json"
-parser.add_argument('--retriever_dir', type=str, required=True, help="sentence transformer saved path")  # "./retriever/expts/mw21_10p_v3_0304_400_20"
-parser.add_argument('--output_dir', type=str, default="./expts/debug", help="directory to save running log and configs")
-parser.add_argument('--mwz_ver', type=str, default="2.1", choices=['2.1', '2.4'], help="version of MultiWOZ") 
+parser.add_argument('--train_fn', type=str, help="training data file (few-shot or full shot)",
+                    required=True)  # e.g. "./data/mw21_10p_train_v3.json"
+# "./retriever/expts/mw21_10p_v3_0304_400_20"
+parser.add_argument('--retriever_dir', type=str, required=True,
+                    help="sentence transformer model, npy saved path")
+parser.add_argument('--retriever_model', type=str, required=False,
+                    help="sentence transformer model saved path")
+parser.add_argument('--output_dir', type=str, default="./expts/debug",
+                    help="directory to save running log and configs")
+parser.add_argument('--mwz_ver', type=str, default="2.1",
+                    choices=['2.1', '2.4'], help="version of MultiWOZ")
 parser.add_argument('--test_fn', type=str, default='',
                     help="file to evaluate on, empty means use the test set")
+parser.add_argument('--num_examples', type=int, default='5',
+                    help="number of examples to retrieve")
 args = parser.parse_args()
 
 # create the output folder
@@ -30,7 +38,8 @@ os.makedirs(args.output_dir, exist_ok=True)
 with open(os.path.join(args.output_dir, "exp_config.json"), 'w') as f:
     json.dump(vars(args), f, indent=4)
 
-NUM_EXAMPLE=5
+NUM_EXAMPLE = args.num_examples
+
 
 # set up the completion function
 complete_fn = codegen_completion
@@ -60,9 +69,10 @@ with open(test_set_path) as f:
     test_set = json.load(f)
 
 # load the retriever
-retriever = EmbeddingRetriever(datasets=[train_set], 
-                               model_path=args.retriever_dir,
-                               search_index_filename=os.path.join(args.retriever_dir, "train_index.npy"), 
+retriever = EmbeddingRetriever(datasets=[train_set],
+                               model_path=args.retriever_model if args.retriever_model else args.retriever_dir,
+                               search_index_filename=os.path.join(
+                                   args.retriever_dir, "train_index.npy"),
                                sampling_method="pre_assigned")
 
 
@@ -79,9 +89,11 @@ def run(test_set, turn=-1, use_gold=False):
     # if needed, only evaluate on particular turns (analysis purpose)
     if turn >= 0:
         if not use_gold:
-            raise ValueError("can only evaluate particular turn when using gold context")
-        selected_set = [d for d in test_set if len(d['dialog']['usr']) == turn + 1]
-    
+            raise ValueError(
+                "can only evaluate particular turn when using gold context")
+        selected_set = [d for d in test_set if len(
+            d['dialog']['usr']) == turn + 1]
+
     prediction_recorder = PreviousStateRecorder()  # state recorder
 
     # start experiment
@@ -106,7 +118,7 @@ def run(test_set, turn=-1, use_gold=False):
                 modified_item, k=NUM_EXAMPLE)
             prompt_text = get_prompt(
                 data_item, examples=examples, given_context=predicted_context)
-        
+
         # print the retrieved examples (without the sql table)
         print(prompt_text.replace(conversion(table_prompt), ""))
 
@@ -135,7 +147,8 @@ def run(test_set, turn=-1, use_gold=False):
         except:
             print("the output is not a valid SQL query")
             data_item['not_valid'] = 1
-        predicted_slot_values = typo_fix(predicted_slot_values, ontology=ontology, version=args.mwz_ver)
+        predicted_slot_values = typo_fix(
+            predicted_slot_values, ontology=ontology, version=args.mwz_ver)
 
         context_slot_values = data_item['last_slot_values']  # a dictionary
 
@@ -154,8 +167,9 @@ def run(test_set, turn=-1, use_gold=False):
                 all_slot_values[s] = v
 
         # some slots may contain multiple values
-        all_slot_values = {k: v.split('|')[0] for k, v in all_slot_values.items()}
-        
+        all_slot_values = {k: v.split('|')[0]
+                           for k, v in all_slot_values.items()}
+
         # record current turn prediction
         prediction_recorder.add_state(data_item, all_slot_values)
 
@@ -167,13 +181,18 @@ def run(test_set, turn=-1, use_gold=False):
 
         # print the result
         print(completion)
-        print(f"this is the {n_total - 1}th example. {data_item['ID']}_turn_{data_item['turn_id']}")
-        print(f"pred turn change: {sv_dict_to_string(predicted_slot_values, sep='-')}")
-        print(f"gold turn change: {sv_dict_to_string(data_item['turn_slot_values'], sep='-')}")
+        print(
+            f"this is the {n_total - 1}th example. {data_item['ID']}_turn_{data_item['turn_id']}")
+        print(
+            f"pred turn change: {sv_dict_to_string(predicted_slot_values, sep='-')}")
+        print(
+            f"gold turn change: {sv_dict_to_string(data_item['turn_slot_values'], sep='-')}")
         print(f"pred states: {sv_dict_to_string(all_slot_values, sep='-')}")
-        print(f"gold states: {sv_dict_to_string(data_item['slot_values'], sep='-')}")
+        print(
+            f"gold states: {sv_dict_to_string(data_item['slot_values'], sep='-')}")
 
-        this_jga, this_acc, this_f1 = evaluate(all_slot_values,data_item['slot_values'])
+        this_jga, this_acc, this_f1 = evaluate(
+            all_slot_values, data_item['slot_values'])
         total_acc += this_acc
         total_f1 += this_f1
 
@@ -184,7 +203,7 @@ def run(test_set, turn=-1, use_gold=False):
         else:
             result_dict[data_item['turn_id']].append(0)
             print("\n=====================wrong!=======================")
-        
+
         print("\n")
 
     print(f"correct {n_correct}/{n_total}  =  {n_correct / n_total}")
