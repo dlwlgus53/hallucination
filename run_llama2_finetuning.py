@@ -116,7 +116,9 @@ def run(test_set, turn=-1, use_gold=False):
             modified_item = copy.deepcopy(data_item)
             modified_item['last_slot_values'] = predicted_context
             examples = retriever.item_to_nearest_examples(
-                modified_item, k=NUM_EXAMPLE)
+                modified_item, k=NUM_EXAMPLE*5)
+            # Here to be reranker
+            examples = raranker.rerank(examples, k=NUM_EXAMPLE)
             prompt_text = get_prompt(
                 data_item, examples=examples, given_context=predicted_context)
 

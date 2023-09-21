@@ -28,7 +28,9 @@ parser.add_argument('--mwz_ver', type=str, default="2.1",
                     choices=['2.1', '2.4'], help="version of MultiWOZ")
 parser.add_argument('--test_fn', type=str, default='',
                     help="file to evaluate on, empty means use the test set")
-parser.add_argument('--num_examples', type=int, default='5',
+parser.add_argument('--num_examples', type=int, default='20',
+                    help="number of examples to retrieve")
+parser.add_argument('--num_re_examples', type=int, default='5',
                     help="number of examples to retrieve")
 
 args = parser.parse_args()
@@ -39,7 +41,6 @@ os.makedirs(args.output_dir, exist_ok=True)
 with open(os.path.join(args.output_dir, "exp_config.json"), 'w') as f:
     json.dump(vars(args), f, indent=4)
 
-NUM_EXAMPLE = args.num_examples
 
 # set up the completion function
 complete_fn = llama_completion
@@ -109,13 +110,15 @@ def run(test_set, turn=-1, use_gold=False):
         completion = ""
         if use_gold:
             prompt_text = get_prompt(
-                data_item, examples=retriever.item_to_nearest_examples(data_item, k=NUM_EXAMPLE))
+                data_item, examples=retriever.item_to_nearest_examples(data_item, k=args.num_examples))
         else:
             predicted_context = prediction_recorder.state_retrieval(data_item)
             modified_item = copy.deepcopy(data_item)
             modified_item['last_slot_values'] = predicted_context
             examples = retriever.item_to_nearest_examples(
-                modified_item, k=NUM_EXAMPLE)
+                modified_item, k=args.num_examples)
+            examples = reranker.rerank_best(  # TODO
+                examples, k=args.num_re_examples)
             prompt_text = get_prompt(
                 data_item, examples=examples, given_context=predicted_context)
 
