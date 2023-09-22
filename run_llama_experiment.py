@@ -11,6 +11,7 @@ from llama_completion import llama_check_over_length, llama_completion
 from utils.sql import sql_pred_parse, sv_dict_to_string
 from prompting import get_prompt, conversion, table_prompt
 from retriever.code.embed_based_retriever import EmbeddingRetriever
+from reranker.code.rerankers import LlamaReranker
 from evaluate_metrics import evaluate
 
 # input arguments
@@ -31,6 +32,8 @@ parser.add_argument('--test_fn', type=str, default='',
 parser.add_argument('--num_examples', type=int, default='20',
                     help="number of examples to retrieve")
 parser.add_argument('--num_re_examples', type=int, default='5',
+                    help="number of examples to retrieve")
+parser.add_argument('--short', type=int, default=0,
                     help="number of examples to retrieve")
 
 args = parser.parse_args()
@@ -85,7 +88,7 @@ def run(test_set, turn=-1, use_gold=False):
     # when use_gold = True, the context are gold context (for analysis purpose)
 
     result_dict = defaultdict(list)  # use to record the accuracy
-
+    Reranker = LlamaReranker(complete_fn, check_overlen_fn)
     selected_set = test_set
     # if needed, only evaluate on particular turns (analysis purpose)
     if turn >= 0:
@@ -103,8 +106,11 @@ def run(test_set, turn=-1, use_gold=False):
     n_correct = 0
     total_acc = 0
     total_f1 = 0
+    n_success = 0
 
     for data_item in tqdm(selected_set):
+        if args.short and n_total > 5:
+            break
         n_total += 1
 
         completion = ""
@@ -117,13 +123,15 @@ def run(test_set, turn=-1, use_gold=False):
             modified_item['last_slot_values'] = predicted_context
             examples = retriever.item_to_nearest_examples(
                 modified_item, k=args.num_examples)
-            examples = reranker.rerank_best(  # TODO
-                examples, k=args.num_re_examples)
+            examples, re_success = Reranker.rerank_best(
+                examples=examples, query=modified_item, k=args.num_re_examples)
+            n_success += re_success
+
             prompt_text = get_prompt(
                 data_item, examples=examples, given_context=predicted_context)
 
         # print the retrieved examples (without the sql table)
-        print(prompt_text.replace(conversion(table_prompt), ""))
+        # print(prompt_text.replace(conversion(table_prompt), ""))
 
         # record the prompt
         data_item['prompt'] = prompt_text
@@ -183,16 +191,16 @@ def run(test_set, turn=-1, use_gold=False):
         all_result.append(data_item)
 
         # print the result
-        print(completion)
-        print(
-            f"this is the {n_total - 1}th example. {data_item['ID']}_turn_{data_item['turn_id']}")
-        print(
-            f"pred turn change: {sv_dict_to_string(predicted_slot_values, sep='-')}")
-        print(
-            f"gold turn change: {sv_dict_to_string(data_item['turn_slot_values'], sep='-')}")
-        print(f"pred states: {sv_dict_to_string(all_slot_values, sep='-')}")
-        print(
-            f"gold states: {sv_dict_to_string(data_item['slot_values'], sep='-')}")
+        # print(completion)
+        # print(
+        #     f"this is the {n_total - 1}th example. {data_item['ID']}_turn_{data_item['turn_id']}")
+        # print(
+        #     f"pred turn change: {sv_dict_to_string(predicted_slot_values, sep='-')}")
+        # print(
+        #     f"gold turn change: {sv_dict_to_string(data_item['turn_slot_values'], sep='-')}")
+        # print(f"pred states: {sv_dict_to_string(all_slot_values, sep='-')}")
+        # print(
+        #     f"gold states: {sv_dict_to_string(data_item['slot_values'], sep='-')}")
 
         this_jga, this_acc, this_f1 = evaluate(
             all_slot_values, data_item['slot_values'])
@@ -209,21 +217,36 @@ def run(test_set, turn=-1, use_gold=False):
 
         print("\n")
 
+    score = {}
+
     print(f"correct {n_correct}/{n_total}  =  {n_correct / n_total}")
+    score['correct'] = n_correct / n_total
+
     print(f"Slot Acc {total_acc/n_total}")
+    score['slot_acc'] = total_acc/n_total
+
     print(f"Joint F1 {total_f1/n_total}")
+    score['joint_f1'] = total_f1/n_total
+
+    print(f"Success {n_success/n_total}")
+    score['success'] = n_success/n_total
+
     print()
 
     # calculate the accuracy of each turn
     for k, v in result_dict.items():
         print(f"accuracy of turn {k} is {sum(v)}/{len(v)} = {sum(v) / len(v)}")
+        score[f"turn_{k}_acc"] = sum(v) / len(v)
 
-    return all_result
+    return all_result, score
 
 
 if __name__ == "__main__":
-
-    all_results = run(test_set)
+    print(args)
+    all_results, score = run(test_set)
 
     with open(os.path.join(args.output_dir, "running_log.json"), 'w') as f:
         json.dump(all_results, f, indent=4)
+
+    with open(os.path.join(args.output_dir, "score.json"), 'w') as f:
+        json.dump(score, f, indent=4)
