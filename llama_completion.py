@@ -9,9 +9,9 @@ MAX_NEW_LENGTH = 100
 
 
 MAX_LENGTH = 2048
-tokenizer = AutoTokenizer.from_pretrained('meta-llama/Llama-2-7b-chat-hf')
+tokenizer = AutoTokenizer.from_pretrained('meta-llama/Llama-2-13b-chat-hf')
 generator = pipeline(
-    'text-generation', model='meta-llama/Llama-2-7b-chat-hf', device=device)
+    'text-generation', model='meta-llama/Llama-2-13b-chat-hf', device=device)
 
 
 # if the input is over maximum length, return True

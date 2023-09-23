@@ -8,14 +8,15 @@ from config import CONFIG
 
 from utils.sql import sql_pred_parse, sv_dict_to_string
 from evaluate_metrics import evaluate
+import pdb
 
 # input arguments
 parser = argparse.ArgumentParser()
-parser.add_argument('--running_log', type=str, required=True,
+parser.add_argument('--run_log', type=str, required=True,
                     help="running log filename")
-parser.add_argument('--test_fn', type=str, default="./data/mw24_100p_test.json",
+parser.add_argument('--test_fn', type=str, default="./data/mw21_100p_test.json",
                     help="running log filename")
-parser.add_argument('--mwz_ver', type=str, default="2.4",
+parser.add_argument('--mwz_ver', type=str, default="2.1",
                     choices=['2.1', '2.4'], help="version of MultiWOZ")
 args = parser.parse_args()
 
@@ -31,31 +32,27 @@ with open(ontology_path) as f:
 
 
 def eval(running_log, test_set, turn=-1, use_gold=False):
-    # turn and use_gold are for analysis purpose
-    # turn = -1 means evalute all dialogues
-    # turn = 0 means evaluate single-turn dialogues
-    # turn = 1 means evalute two-turn dialogues... etc.
-    # when use_gold = True, the context are gold context (for analysis purpose)
-
     result_dict = defaultdict(list)  # use to record the accuracy
-
     prediction_recorder = PreviousStateRecorder()  # state recorder
-
     # start experiment
     all_result = []
     n_total = 0
     n_correct = 0
     total_acc = 0
     total_f1 = 0
+    if len(running_log) != len(test_set):
+        print("running log and test set are not aligned")
+        print("this should be working as debug mode")
+        test_set = test_set[:len(running_log)]
 
     for data_item, label_item in tqdm(zip(running_log, test_set)):
-        
+
         if turn >= 0:
             if data_item['turn_id'] != turn:
                 continue
-        
+
         n_total += 1
-        
+
         completion = data_item['completion']
 
         # aggregate the prediction and the history states
@@ -78,7 +75,6 @@ def eval(running_log, test_set, turn=-1, use_gold=False):
                 data_item).copy()
 
         for s, v in predicted_slot_values.items():
-
             if s in all_slot_values and v == "[DELETE]":
                 del all_slot_values[s]
             elif v != "[DELETE]":
@@ -91,32 +87,19 @@ def eval(running_log, test_set, turn=-1, use_gold=False):
         # record current turn prediction
         prediction_recorder.add_state(data_item, all_slot_values)
 
-        # print the result
-        print(completion)
-        print(
-            f"this is the {n_total - 1}th example. {data_item['ID']}_turn_{data_item['turn_id']}")
-        print(
-            f"pred turn change: {sv_dict_to_string(predicted_slot_values, sep='-')}")
-        print(
-            f"gold turn change: {sv_dict_to_string(label_item['turn_slot_values'], sep='-')}")
-        print(f"pred states: {sv_dict_to_string(all_slot_values, sep='-')}")
-        print(
-            f"gold states: {sv_dict_to_string(label_item['slot_values'], sep='-')}")
+        # print(f"pred states: {sv_dict_to_string(all_slot_values, sep='-')}")
+        # print(
+        #     f"gold states: {sv_dict_to_string(data_item['slot_values'], sep='-')}")
 
         this_jga, this_acc, this_f1 = evaluate(
             all_slot_values, label_item['slot_values'])
         total_acc += this_acc
         total_f1 += this_f1
-
         if this_jga:
             n_correct += 1
             result_dict[data_item['turn_id']].append(1)
-            print("\n=====================correct!=======================")
         else:
             result_dict[data_item['turn_id']].append(0)
-            print("\n=====================wrong!=======================")
-
-        print("\n")
 
     print(f"correct {n_correct}/{n_total}  =  {n_correct / n_total}")
     print(f"Slot Acc {total_acc/n_total}")
@@ -133,11 +116,11 @@ def eval(running_log, test_set, turn=-1, use_gold=False):
 if __name__ == "__main__":
 
     # read the running log
-    with open(args.running_log) as f:   
+    with open(args.run_log) as f:
         running_log = json.load(f)
 
     # read the testing file
     with open(args.test_fn) as f:
         test_set = json.load(f)
 
-    eval(running_log,test_set, use_gold=True)
+    eval(running_log, test_set, use_gold=False)

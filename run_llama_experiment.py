@@ -109,7 +109,7 @@ def run(test_set, turn=-1, use_gold=False):
     n_success = 0
 
     for data_item in tqdm(selected_set):
-        if args.short and n_total > 5:
+        if args.short and n_total > 15:
             break
         n_total += 1
 
@@ -198,9 +198,9 @@ def run(test_set, turn=-1, use_gold=False):
         #     f"pred turn change: {sv_dict_to_string(predicted_slot_values, sep='-')}")
         # print(
         #     f"gold turn change: {sv_dict_to_string(data_item['turn_slot_values'], sep='-')}")
-        # print(f"pred states: {sv_dict_to_string(all_slot_values, sep='-')}")
-        # print(
-        #     f"gold states: {sv_dict_to_string(data_item['slot_values'], sep='-')}")
+        print(f"pred states: {sv_dict_to_string(all_slot_values, sep='-')}")
+        print(
+            f"gold states: {sv_dict_to_string(data_item['slot_values'], sep='-')}")
 
         this_jga, this_acc, this_f1 = evaluate(
             all_slot_values, data_item['slot_values'])
