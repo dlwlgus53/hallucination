@@ -98,7 +98,8 @@ def run(test_set, turn=-1, use_gold=False):
     # when use_gold = True, the context are gold context (for analysis purpose)
 
     result_dict = defaultdict(list)  # use to record the accuracy
-    Reranker = LlamaReranker(complete_fn, check_overlen_fn, verbose=args.verbose, cot=args.cot)
+    Reranker = LlamaReranker(
+        complete_fn, check_overlen_fn, cot=args.cot)
     selected_set = test_set
     # if needed, only evaluate on particular turns (analysis purpose)
     if turn >= 0:
@@ -133,14 +134,17 @@ def run(test_set, turn=-1, use_gold=False):
             modified_item['last_slot_values'] = predicted_context
             examples = retriever.item_to_nearest_examples(
                 modified_item, k=args.num_examples)
-            examples, re_success = Reranker.rerank_best(
+            examples, re_success, re_prompt = Reranker.rerank_best(
                 examples=examples, query=modified_item, k=args.num_re_examples)
             n_success += re_success
+
+            if args.verbose or n_total < 10:
+                print(re_prompt)
 
             prompt_text = get_prompt(
                 data_item, examples=examples, given_context=predicted_context)
         # print the retrieved examples (without the sql table)
-        if args.verbose:
+        if args.verbose or n_total < 10:
             print(prompt_text.replace(conversion(table_prompt), ""))
 
         # record the prompt
@@ -159,7 +163,7 @@ def run(test_set, turn=-1, use_gold=False):
                 examples = examples[1:]
 
         completion = complete_fn(prompt_text)
-        
+
         completion = conversion(completion, reverse=True)
 
         # aggregate the prediction and the history states
@@ -203,7 +207,7 @@ def run(test_set, turn=-1, use_gold=False):
         all_result.append(data_item)
 
         # print the result
-        if args.verbose:
+        if args.verbose or n_total < 10 == 0:
             print(completion)
             print(
                 f"this is the {n_total - 1}th example. {data_item['ID']}_turn_{data_item['turn_id']}")

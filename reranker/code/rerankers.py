@@ -11,10 +11,9 @@ class Reranker():
 
 
 class LlamaReranker(Reranker):
-    def __init__(self, model, overcheck, verbose=False, cot=False):
+    def __init__(self, model, overcheck,  cot=False):
         super().__init__(model=model)
         self.overcheck = overcheck
-        self.verbose = verbose
         self.cot = cot
 
     def rerank_best(self, examples, query, k):
@@ -22,29 +21,30 @@ class LlamaReranker(Reranker):
 
         while self.overcheck(prompt):
             examples = examples[:-1]
-            if self.verbose:
-                print("reduce")
             prompt = rerank_prompt(examples, query, k, self.cot)
 
         result = self.model(prompt)
 
-        if self.verbose:
-            print("prompt: ", prompt)
-            print("result: ", result)
+        re_examples = []
+        success = 0
+
         if not self.cot:
             if len(result.strip()) == 0:
-                return (examples[:k], 0)
+                re_examples, success = examples[:k], 0
 
             try:
                 new_examples = []
+
                 nums = result.replace("]", "").strip().split(",")
                 for num in nums:
                     num = int(num.strip())
                     new_examples.append(examples[num-1])  # index is 1-based
-                return (new_examples, 1)
+                re_examples, success = new_examples, 1
             except:
                 print("error result: ", result)
-                return (examples[:k], 0)
+                re_examples, success = examples[:k], 0
         else:
             print("------------not to be here!!!!")
-            return (examples[:k], 0)
+            re_examples, success = examples[:k], 0  # TODO : chnge here
+
+        return re_examples, success, prompt+result
