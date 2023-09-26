@@ -101,7 +101,7 @@ def eval(running_log, test_set, turn=-1, use_gold=False):
         else:
             result_dict[data_item['turn_id']].append(0)
 
-    print(f"correct {n_correct}/{n_total}  =  {n_correct / n_total}")
+    print(f"correct {n_correct}/{n_total}  =  {n_correct*100 / n_total}")
     print(f"Slot Acc {total_acc/n_total}")
     print(f"Joint F1 {total_f1/n_total}")
     print()

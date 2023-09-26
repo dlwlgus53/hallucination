@@ -151,6 +151,7 @@ def get_prompt(data_item, examples, given_context=None, n_examples=None):
         last_sys_utt = ''
     prompt_text += f"[system] {last_sys_utt}\n"
     prompt_text += f"Q: [user] {question_item['dialog']['usr'][-1]}\n"
+    # prompt_text += f"Let's think step by step, and answer should start with a\n"
     prompt_text += "SQL: SELECT * FROM"
 
     return prompt_text

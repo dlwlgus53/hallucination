@@ -6,12 +6,11 @@ if torch.cuda.is_available():
     device = 0
 
 MAX_NEW_LENGTH = 100
-
-
 MAX_LENGTH = 2048
-tokenizer = AutoTokenizer.from_pretrained('meta-llama/Llama-2-13b-chat-hf')
+
+tokenizer = AutoTokenizer.from_pretrained('meta-llama/Llama-2-7b-chat-hf')
 generator = pipeline(
-    'text-generation', model='meta-llama/Llama-2-13b-chat-hf', device=device)
+    'text-generation', model='meta-llama/Llama-2-7b-chat-hf', device=device)
 
 
 # if the input is over maximum length, return True
@@ -23,6 +22,7 @@ def llama_check_over_length(prompt, report_len=False):
 
 
 def llama_completion(prompt):
+    
     with torch.no_grad():
         generated_text = generator(prompt, do_sample=True,
                                    max_new_tokens=MAX_NEW_LENGTH,

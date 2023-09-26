@@ -7,18 +7,17 @@ from tqdm import tqdm
 from utils.helper import PreviousStateRecorder
 from utils.typo_fix import typo_fix
 from config import CONFIG
-from llama_completion import llama_check_over_length, llama_completion
 from utils.sql import sql_pred_parse, sv_dict_to_string
 from prompting import get_prompt, conversion, table_prompt
 from retriever.code.embed_based_retriever import EmbeddingRetriever
 from reranker.code.rerankers import LlamaReranker
 from evaluate_metrics import evaluate
+import pdb
 
 # input arguments
 parser = argparse.ArgumentParser()
 parser.add_argument('--train_fn', type=str, help="training data file (few-shot or full shot)",
                     required=True)  # e.g. "./data/mw21_10p_train_v3.json"
-# "./retriever/expts/mw21_10p_v3_0304_400_20"
 parser.add_argument('--retriever_dir', type=str, required=True,
                     help="sentence transformer model, npy saved path")
 parser.add_argument('--retriever_model', type=str, required=False,
@@ -29,12 +28,21 @@ parser.add_argument('--mwz_ver', type=str, default="2.1",
                     choices=['2.1', '2.4'], help="version of MultiWOZ")
 parser.add_argument('--test_fn', type=str, default='',
                     help="file to evaluate on, empty means use the test set")
-parser.add_argument('--num_examples', type=int, default='20',
+parser.add_argument('--num_examples', type=int, default=30,
                     help="number of examples to retrieve")
-parser.add_argument('--num_re_examples', type=int, default='5',
+parser.add_argument('--num_re_examples', type=int, default=5,
                     help="number of examples to retrieve")
 parser.add_argument('--short', type=int, default=0,
-                    help="number of examples to retrieve")
+                    help="debugging mode")
+parser.add_argument('--target_domain', type=str, default='hotel',
+                    choices=['hotel', 'restaurant',
+                             'attraction', 'taxi', 'train'],
+                    help="target domain")
+
+parser.add_argument('--verbose', type=int, default=0,
+                    help="do you like verbose program?")
+parser.add_argument('--cot', type=int, default=0,
+                    help="cot prompting")
 
 args = parser.parse_args()
 
@@ -46,8 +54,6 @@ with open(os.path.join(args.output_dir, "exp_config.json"), 'w') as f:
 
 
 # set up the completion function
-complete_fn = llama_completion
-check_overlen_fn = llama_check_over_length
 
 # read the selection pool
 with open(args.train_fn) as f:
@@ -81,14 +87,18 @@ retriever = EmbeddingRetriever(datasets=[train_set],
 
 
 def run(test_set, turn=-1, use_gold=False):
+    from llama_completion import llama_check_over_length, llama_completion
+    complete_fn = llama_completion
+    check_overlen_fn = llama_check_over_length
+
     # turn and use_gold are for analysis purpose
-    # turn = -1 means evalute all dialogues
+    # turn = -1 means evaluate all dialogues
     # turn = 0 means evaluate single-turn dialogues
-    # turn = 1 means evalute two-turn dialogues... etc.
+    # turn = 1 means evaluate two-turn dialogues... etc.
     # when use_gold = True, the context are gold context (for analysis purpose)
 
     result_dict = defaultdict(list)  # use to record the accuracy
-    Reranker = LlamaReranker(complete_fn, check_overlen_fn)
+    Reranker = LlamaReranker(complete_fn, check_overlen_fn, verbose=args.verbose, cot=args.cot)
     selected_set = test_set
     # if needed, only evaluate on particular turns (analysis purpose)
     if turn >= 0:
@@ -109,7 +119,7 @@ def run(test_set, turn=-1, use_gold=False):
     n_success = 0
 
     for data_item in tqdm(selected_set):
-        if args.short and n_total > 15:
+        if args.short != 0 and args.short == n_total:
             break
         n_total += 1
 
@@ -129,9 +139,9 @@ def run(test_set, turn=-1, use_gold=False):
 
             prompt_text = get_prompt(
                 data_item, examples=examples, given_context=predicted_context)
-
         # print the retrieved examples (without the sql table)
-        # print(prompt_text.replace(conversion(table_prompt), ""))
+        if args.verbose:
+            print(prompt_text.replace(conversion(table_prompt), ""))
 
         # record the prompt
         data_item['prompt'] = prompt_text
@@ -149,6 +159,7 @@ def run(test_set, turn=-1, use_gold=False):
                 examples = examples[1:]
 
         completion = complete_fn(prompt_text)
+        
         completion = conversion(completion, reverse=True)
 
         # aggregate the prediction and the history states
@@ -185,22 +196,24 @@ def run(test_set, turn=-1, use_gold=False):
         prediction_recorder.add_state(data_item, all_slot_values)
 
         # record the predictions
+
         data_item['pred'] = all_slot_values
         data_item['ontology_path'] = ontology_path
         data_item['completion'] = completion
         all_result.append(data_item)
 
         # print the result
-        # print(completion)
+        if args.verbose:
+            print(completion)
+            print(
+                f"this is the {n_total - 1}th example. {data_item['ID']}_turn_{data_item['turn_id']}")
+            print(
+                f"pred turn change: {sv_dict_to_string(predicted_slot_values, sep='-')}")
+            print(
+                f"gold turn change: {sv_dict_to_string(data_item['turn_slot_values'], sep='-')}")
+        # print(f"pred states: {sv_dict_to_string(all_slot_values, sep='-')}")
         # print(
-        #     f"this is the {n_total - 1}th example. {data_item['ID']}_turn_{data_item['turn_id']}")
-        # print(
-        #     f"pred turn change: {sv_dict_to_string(predicted_slot_values, sep='-')}")
-        # print(
-        #     f"gold turn change: {sv_dict_to_string(data_item['turn_slot_values'], sep='-')}")
-        print(f"pred states: {sv_dict_to_string(all_slot_values, sep='-')}")
-        print(
-            f"gold states: {sv_dict_to_string(data_item['slot_values'], sep='-')}")
+        # f"gold states: {sv_dict_to_string(data_item['slot_values'], sep='-')}")
 
         this_jga, this_acc, this_f1 = evaluate(
             all_slot_values, data_item['slot_values'])
@@ -210,12 +223,12 @@ def run(test_set, turn=-1, use_gold=False):
         if this_jga:
             n_correct += 1
             result_dict[data_item['turn_id']].append(1)
-            print("\n=====================correct!=======================")
+            # print("\n=====================correct!=======================")
         else:
             result_dict[data_item['turn_id']].append(0)
-            print("\n=====================wrong!=======================")
+            # print("\n=====================wrong!=======================")
 
-        print("\n")
+        # print("\n")
 
     score = {}
 
