@@ -12,9 +12,12 @@ from prompting import get_prompt, conversion, table_prompt
 from retriever.code.embed_based_retriever import EmbeddingRetriever
 from reranker.code.rerankers import LlamaReranker
 from evaluate_metrics import evaluate
+import init
 import pdb
-
+import logging
 # input arguments
+
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--train_fn', type=str, help="training data file (few-shot or full shot)",
                     required=True)  # e.g. "./data/mw21_10p_train_v3.json"
@@ -34,6 +37,8 @@ parser.add_argument('--num_re_examples', type=int, default=5,
                     help="number of examples to retrieve")
 parser.add_argument('--short', type=int, default=0,
                     help="debugging mode")
+parser.add_argument('--reranker', type=int, default=0,
+                    help="use reranker or not")
 parser.add_argument('--target_domain', type=str, default='hotel',
                     choices=['hotel', 'restaurant',
                              'attraction', 'taxi', 'train'],
@@ -43,11 +48,15 @@ parser.add_argument('--verbose', type=int, default=0,
                     help="do you like verbose program?")
 parser.add_argument('--cot', type=int, default=0,
                     help="cot prompting")
-
+parser.add_argument('--seed', type=int, default=42,
+                    help="cot prompting")
 args = parser.parse_args()
 
 # create the output folder
 os.makedirs(args.output_dir, exist_ok=True)
+
+init.init_experiment(args)
+logger = logging.getLogger("my")
 
 with open(os.path.join(args.output_dir, "exp_config.json"), 'w') as f:
     json.dump(vars(args), f, indent=4)
@@ -125,6 +134,7 @@ def run(test_set, turn=-1, use_gold=False):
         n_total += 1
 
         completion = ""
+
         if use_gold:
             prompt_text = get_prompt(
                 data_item, examples=retriever.item_to_nearest_examples(data_item, k=args.num_examples))
@@ -134,18 +144,19 @@ def run(test_set, turn=-1, use_gold=False):
             modified_item['last_slot_values'] = predicted_context
             examples = retriever.item_to_nearest_examples(
                 modified_item, k=args.num_examples)
-            examples, re_success, re_prompt = Reranker.rerank_best(
-                examples=examples, query=modified_item, k=args.num_re_examples)
-            n_success += re_success
+            if args.reranker:  # use reranker or not
+                examples, re_success, re_prompt = Reranker.rerank_best(
+                    examples=examples, query=modified_item, k=args.num_re_examples)
+                n_success += re_success
 
-            if args.verbose or n_total < 10:
-                print(re_prompt)
+                if args.verbose or n_total < 10:
+                    logger.info(re_prompt)
 
             prompt_text = get_prompt(
                 data_item, examples=examples, given_context=predicted_context)
-        # print the retrieved examples (without the sql table)
+        # logger.info the retrieved examples (without the sql table)
         if args.verbose or n_total < 10:
-            print(prompt_text.replace(conversion(table_prompt), ""))
+            logger.info(prompt_text.replace(conversion(table_prompt), ""))
 
         # record the prompt
         data_item['prompt'] = prompt_text
@@ -159,7 +170,7 @@ def run(test_set, turn=-1, use_gold=False):
 
             # reduce the number of examples if overlength
             if overlen_flag:
-                print("prompt overlength")
+                logger.info("prompt overlength")
                 examples = examples[1:]
 
         completion = complete_fn(prompt_text)
@@ -171,7 +182,7 @@ def run(test_set, turn=-1, use_gold=False):
         try:
             predicted_slot_values = sql_pred_parse(completion)  # a dictionary
         except:
-            print("the output is not a valid SQL query")
+            logger.info("the output is not a valid SQL query")
             data_item['not_valid'] = 1
         predicted_slot_values = typo_fix(
             predicted_slot_values, ontology=ontology, version=args.mwz_ver)
@@ -204,19 +215,27 @@ def run(test_set, turn=-1, use_gold=False):
         data_item['pred'] = all_slot_values
         data_item['ontology_path'] = ontology_path
         data_item['completion'] = completion
+        if args.reranker:
+            try:
+                data_item['reranker_prompt'] = re_prompt.split("result : ")[0]
+                data_item['reranker_result'] = re_prompt.split("result : ")[1]
+            except:
+                data_item['reranker_prompt'] = re_prompt
+                data_item['reranker_result'] = re_prompt
+            data_item['reranker_success'] = re_success
         all_result.append(data_item)
 
-        # print the result
-        if args.verbose or n_total < 10 == 0:
-            print(completion)
-            print(
+        # logger.info the result
+        if args.verbose or n_total < 10:
+            logger.info(completion)
+            logger.info(
                 f"this is the {n_total - 1}th example. {data_item['ID']}_turn_{data_item['turn_id']}")
-            print(
+            logger.info(
                 f"pred turn change: {sv_dict_to_string(predicted_slot_values, sep='-')}")
-            print(
+            logger.info(
                 f"gold turn change: {sv_dict_to_string(data_item['turn_slot_values'], sep='-')}")
-        # print(f"pred states: {sv_dict_to_string(all_slot_values, sep='-')}")
-        # print(
+        # logger.info(f"pred states: {sv_dict_to_string(all_slot_values, sep='-')}")
+        # logger.info(
         # f"gold states: {sv_dict_to_string(data_item['slot_values'], sep='-')}")
 
         this_jga, this_acc, this_f1 = evaluate(
@@ -227,39 +246,39 @@ def run(test_set, turn=-1, use_gold=False):
         if this_jga:
             n_correct += 1
             result_dict[data_item['turn_id']].append(1)
-            # print("\n=====================correct!=======================")
+            # logger.info("\n=====================correct!=======================")
         else:
             result_dict[data_item['turn_id']].append(0)
-            # print("\n=====================wrong!=======================")
+            # logger.info("\n=====================wrong!=======================")
 
-        # print("\n")
+        # logger.info("\n")
 
     score = {}
 
-    print(f"correct {n_correct}/{n_total}  =  {n_correct / n_total}")
+    logger.info(f"correct {n_correct}/{n_total}  =  {n_correct / n_total}")
     score['correct'] = n_correct / n_total
 
-    print(f"Slot Acc {total_acc/n_total}")
+    logger.info(f"Slot Acc {total_acc/n_total}")
     score['slot_acc'] = total_acc/n_total
 
-    print(f"Joint F1 {total_f1/n_total}")
+    logger.info(f"Joint F1 {total_f1/n_total}")
     score['joint_f1'] = total_f1/n_total
 
-    print(f"Success {n_success/n_total}")
+    logger.info(f"Success {n_success/n_total}")
     score['success'] = n_success/n_total
-
-    print()
 
     # calculate the accuracy of each turn
     for k, v in result_dict.items():
-        print(f"accuracy of turn {k} is {sum(v)}/{len(v)} = {sum(v) / len(v)}")
+        logger.info(
+            f"accuracy of turn {k} is {sum(v)}/{len(v)} = {sum(v) / len(v)}")
         score[f"turn_{k}_acc"] = sum(v) / len(v)
 
     return all_result, score
 
 
 if __name__ == "__main__":
-    print(args)
+    logger.info(args)
+    
     all_results, score = run(test_set)
 
     with open(os.path.join(args.output_dir, "running_log.json"), 'w') as f:

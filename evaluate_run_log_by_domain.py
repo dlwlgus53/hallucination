@@ -8,7 +8,7 @@ from config import CONFIG
 import pdb
 from utils.sql import sql_pred_parse, sv_dict_to_string
 from evaluate_metrics import evaluate
-
+import os
 # input arguments
 parser = argparse.ArgumentParser()
 parser.add_argument('--run_log', type=str, required=True,
@@ -245,6 +245,7 @@ def eval2(running_log, test_set, turn=-1, use_gold=False, domain=""):
 if __name__ == "__main__":
 
     # read the running log
+    args.run_log = os.path.join(args.run_log, "running_log.json")
     with open(args.run_log) as f:
         running_log = json.load(f)
 
@@ -260,11 +261,11 @@ if __name__ == "__main__":
 
     domain = args.target_domain
     print(f"DOMAIN {domain} result:")
-    result = eval1(running_log, test_set, domain=domain)
-    score[f'{domain}_1'] = result
+    # result = eval1(running_log, test_set, domain=domain)
+    # score[f'{domain}_1'] = result
 
     result = eval2(running_log, test_set, domain=domain)
-    score[f'{domain}_2'] = result
+    score['domain_JGA'] = result
 
     with open(score_path, 'w') as f:
         json.dump(score, f, indent=4)
