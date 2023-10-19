@@ -13,5 +13,6 @@ def rerank_prompt(items, query, k, cot):
         prompt += 'for example, [{reason : ..., index : 6}, {reason : because.. , index : 13} ,,,]\n'
         prompt += "result : [{reason : "
     else:
+        prompt += 'format is [number, number, number, ...]\n'
         prompt += '['
     return prompt

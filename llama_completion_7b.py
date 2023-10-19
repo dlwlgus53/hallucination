@@ -5,14 +5,14 @@ device = -1
 if torch.cuda.is_available():
     device = 0
 
-MAX_NEW_LENGTH = 128
+MAX_NEW_LENGTH = 512
 MAX_LENGTH = 4096
 
-print("start load model")
+print("start load 7b model")
 tokenizer = AutoTokenizer.from_pretrained('meta-llama/Llama-2-7b-chat-hf')
 generator = pipeline(
     'text-generation', model='meta-llama/Llama-2-7b-chat-hf', device=device)
-print("finish load model")
+print("finish load 7b model")
 
 # if the input is over maximum length, return True
 

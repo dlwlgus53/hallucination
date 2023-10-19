@@ -15,10 +15,14 @@ from evaluate_metrics import evaluate
 import init
 import pdb
 import logging
+
+
 # input arguments
 
 
 parser = argparse.ArgumentParser()
+parser.add_argument('--model_version', type=str, help="name of the model",
+                    required=True)  # e.g. "./data/mw21_10p_train_v3.json"
 parser.add_argument('--train_fn', type=str, help="training data file (few-shot or full shot)",
                     required=True)  # e.g. "./data/mw21_10p_train_v3.json"
 parser.add_argument('--retriever_dir', type=str, required=True,
@@ -96,7 +100,13 @@ retriever = EmbeddingRetriever(datasets=[train_set],
 
 
 def run(test_set, turn=-1, use_gold=False):
-    from llama_completion import llama_check_over_length, llama_completion
+    if '7' in args.model_version:
+        from llama_completion_7b import llama_check_over_length, llama_completion
+    elif '13' in args.model_version:
+        from llama_completion_13b import llama_check_over_length, llama_completion
+    else:
+        raise ValueError("model version not supported")
+
     complete_fn = llama_completion
     check_overlen_fn = llama_check_over_length
 
@@ -126,7 +136,8 @@ def run(test_set, turn=-1, use_gold=False):
     n_correct = 0
     total_acc = 0
     total_f1 = 0
-    n_success = 0
+    if args.reranker:
+        n_success = 0
 
     for data_item in tqdm(selected_set):
         if args.short != 0 and args.short == n_total:
@@ -263,9 +274,9 @@ def run(test_set, turn=-1, use_gold=False):
 
     logger.info(f"Joint F1 {total_f1/n_total}")
     score['joint_f1'] = total_f1/n_total
-
-    logger.info(f"Success {n_success/n_total}")
-    score['success'] = n_success/n_total
+    if args.reranker:
+        logger.info(f"Success {n_success/n_total}")
+        score['success'] = n_success/n_total
 
     # calculate the accuracy of each turn
     for k, v in result_dict.items():
@@ -278,7 +289,7 @@ def run(test_set, turn=-1, use_gold=False):
 
 if __name__ == "__main__":
     logger.info(args)
-    
+
     all_results, score = run(test_set)
 
     with open(os.path.join(args.output_dir, "running_log.json"), 'w') as f:
