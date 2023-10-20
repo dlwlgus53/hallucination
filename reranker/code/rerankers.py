@@ -45,7 +45,8 @@ class LlamaReranker(Reranker):
             try:
                 "[{'reason' : something, 'index' : something}, {reason : something, 'index' : something], ...]"
                 new_examples = []
-                result = '[{reason : '+result.strip()
+                result = result.replace("(", "").replace(")", "")
+                result = '['+result.strip()
                 result_list = result.split("index : ")[1:]
                 for item in result_list:
                     index = int(item.split("}")[0].strip())
@@ -55,4 +56,4 @@ class LlamaReranker(Reranker):
                 print("error result: ", result)
                 re_examples, success = examples[:k], 0  # TODO : chnge here
 
-        return re_examples[:k], success, prompt+'\n'+result
+        return re_examples[:k], success, prompt+result

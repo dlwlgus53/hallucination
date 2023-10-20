@@ -10,8 +10,8 @@ def rerank_prompt(items, query, k, cot):
     prompt += f"Please select the {k} most related dialogue's with query in number of list format.\n"
     if cot:
         prompt += 'with the detailed reason in list of dictionary type'
-        prompt += 'for example, [{reason : ..., index : 6}, {reason : because.. , index : 13} ,,,]\n'
-        prompt += "result : [{reason : "
+        prompt += 'for example, [{reason : text, index : number}, {reason : text , index :number }]\n'
+        prompt += '['
     else:
         prompt += 'format is [number, number, number, ...]\n'
         prompt += '['

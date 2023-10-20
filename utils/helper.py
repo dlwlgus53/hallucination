@@ -1,6 +1,9 @@
 import time
+import json
 
 # time to restrict query speed
+
+
 class SpeedLimitTimer:
     def __init__(self, second_per_step=3.1):
         self.record_time = time.time()
@@ -35,3 +38,11 @@ class PreviousStateRecorder:
             return {}
         else:
             return self.states[dialog_ID][turn_id - 1]
+
+    def save_states(self, path):
+        with open(path, 'w') as f:
+            json.dump(self.states, f)
+
+    def load_states(self, path):
+        with open(path) as f:
+            self.states = json.load(f)
