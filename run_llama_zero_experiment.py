@@ -9,14 +9,13 @@ from utils.typo_fix import typo_fix
 from config import CONFIG
 from utils.sql import sql_pred_parse, sv_dict_to_string
 from prompting import get_prompt, conversion, table_prompt
-from retriever.code.embed_based_retriever import EmbeddingRetriever
-from reranker.code.rerankers import LlamaReranker
+
 from evaluate_metrics import evaluate
 import init
 import pdb
 import logging
 
-
+from saver import *
 # input arguments
 
 
@@ -89,17 +88,19 @@ if args.test_fn:
 with open(ontology_path) as f:
     ontology = json.load(f)
 with open(test_set_path) as f:
-    test_set = json.load(f)
+    test_sets = json.load(f)
 
 # load the retriever
-retriever = EmbeddingRetriever(datasets=[train_set],
-                               model_path=args.retriever_model if args.retriever_model else args.retriever_dir,
-                               search_index_filename=os.path.join(
-                                   args.retriever_dir, "train_index.npy"),
-                               sampling_method="pre_assigned")
 
 
 def run(test_set, turn=-1, use_gold=False):
+
+    retriever = EmbeddingRetriever(datasets=[train_set],
+                                   model_path=args.retriever_model if args.retriever_model else args.retriever_dir,
+                                   search_index_filename=os.path.join(
+                                   args.retriever_dir, "train_index.npy"),
+                                   sampling_method="pre_assigned")
+
     if '7' in args.model_version:
         from llama_completion_7b import llama_check_over_length, llama_completion
     elif '13' in args.model_version:
@@ -156,18 +157,22 @@ def run(test_set, turn=-1, use_gold=False):
             examples = retriever.item_to_nearest_examples(
                 modified_item, k=args.num_examples)
             if args.reranker:  # use reranker or not
-                examples, re_success, re_prompt = Reranker.rerank_best(
+                examples, re_success, re_prompt, reasons = Reranker.rerank_best(
                     examples=examples, query=modified_item, k=args.num_re_examples)
-                n_success += re_success
 
-                if args.verbose or n_total < 10:
+                n_success += re_success
+                if args.verbose or n_total < 5:
                     logger.info(re_prompt)
 
             prompt_text = get_prompt(
                 data_item, examples=examples, given_context=predicted_context)
         # logger.info the retrieved examples (without the sql table)
-        if args.verbose or n_total < 10:
+        if args.verbose or n_total < 5:
             logger.info(prompt_text.replace(conversion(table_prompt), ""))
+        if re_success == 0:
+            logger.warning("reranker failed")
+            logger.warning(re_prompt)
+            pdb.set_trace()
 
         # record the prompt
         data_item['prompt'] = prompt_text
@@ -227,6 +232,8 @@ def run(test_set, turn=-1, use_gold=False):
         data_item['ontology_path'] = ontology_path
         data_item['completion'] = completion
         if args.reranker:
+            if args.cot:
+                data_item['reranker_reasons'] = reasons
             try:
                 data_item['reranker_prompt'] = re_prompt.split("result : ")[0]
                 data_item['reranker_result'] = re_prompt.split("result : ")[1]
@@ -237,7 +244,7 @@ def run(test_set, turn=-1, use_gold=False):
         all_result.append(data_item)
 
         # logger.info the result
-        if args.verbose or n_total < 10:
+        if args.verbose or n_total < 5:
             logger.info(completion)
             logger.info(
                 f"this is the {n_total - 1}th example. {data_item['ID']}_turn_{data_item['turn_id']}")
@@ -262,38 +269,95 @@ def run(test_set, turn=-1, use_gold=False):
             result_dict[data_item['turn_id']].append(0)
             # logger.info("\n=====================wrong!=======================")
 
-        # logger.info("\n")
-
     score = {}
-
     logger.info(f"correct {n_correct}/{n_total}  =  {n_correct / n_total}")
-    score['correct'] = n_correct / n_total
+    score['JGA'] = n_correct
+    score['n_total'] = n_total
 
     logger.info(f"Slot Acc {total_acc/n_total}")
-    score['slot_acc'] = total_acc/n_total
+    score['slot_acc'] = total_acc
 
     logger.info(f"Joint F1 {total_f1/n_total}")
-    score['joint_f1'] = total_f1/n_total
+    score['joint_f1'] = total_f1
     if args.reranker:
         logger.info(f"Success {n_success/n_total}")
-        score['success'] = n_success/n_total
+        score['parsing_success'] = n_success
 
-    # calculate the accuracy of each turn
-    for k, v in result_dict.items():
-        logger.info(
-            f"accuracy of turn {k} is {sum(v)}/{len(v)} = {sum(v) / len(v)}")
-        score[f"turn_{k}_acc"] = sum(v) / len(v)
+    # # calculate the accuracy of each turn
+    # for k, v in result_dict.items():
+    #     logger.info(
+    #         f"accuracy of turn {k} is {sum(v)}/{len(v)} = {sum(v) / len(v)}")
+    #     score[f"turn_{k}_acc"] = sum(v) / len(v)
 
-    return all_result, score
+    return score, all_result
+
+
+def get_summed_scoring(scores_json):
+    scores = defaultdict(float)
+    for score in scores_json:
+        scores['JGA'] += score['JGA']
+        scores['n_total'] += score['n_total']
+        scores['slot_acc'] += score['slot_acc']
+        scores['joint_f1'] += score['joint_f1']
+        if args.reranker:
+            scores['parsing_success'] += score['parsing_success']
+
+    scores['JGA'] /= scores['n_total']
+    scores['slot_acc'] /= scores['n_total']
+    scores['joint_f1'] /= scores['n_total']
+    if args.reranker:
+        scores['parsing_success'] /= scores['n_total']
+    return scores
 
 
 if __name__ == "__main__":
-    logger.info(args)
 
-    all_results, score = run(test_set)
+    logger.info(args)
+    os.makedirs(args.output_dir, exist_ok=True)
+    os.makedirs(os.path.join(args.output_dir, "logs"), exist_ok=True)
+    test_sets = split_testset(test_sets, 20)
+    from retriever.code.embed_based_retriever import EmbeddingRetriever
+    from reranker.code.rerankers import LlamaReranker
+
+    temp_folder = os.path.join(args.output_dir, 'logs')
+    for idx, test_set in enumerate(test_sets):
+        # if alerady done, skip
+        if f"scores_{idx}.json" in os.listdir(temp_folder):
+            logger.info(f"Skip {idx}'th result in {args.output_dir}")
+            continue
+
+        scores, all_results = run(test_set)
+
+        with open(os.path.join(temp_folder, f"running_log_{idx}.json"), 'w') as f:
+            json.dump(all_results, f, indent=4)
+
+        with open(os.path.join(temp_folder, f"scores_{idx}.json"), 'w') as f:
+            json.dump(scores, f, indent=4)
+
+        logger.info(f"Save {idx}'th result in {temp_folder}")
+
+    # add all the result together
+
+    # load all files in the output folder
+    all_results = []
+    for fn in os.listdir(temp_folder):
+        if fn.startswith("running_log"):
+            with open(os.path.join(temp_folder, fn)) as f:
+                all_results.extend(json.load(f))
+
+    scores = []
+    for fn in os.listdir(temp_folder):
+        if fn.startswith("scores"):
+            with open(os.path.join(temp_folder, fn)) as f:
+                scores_ = json.load(f)
+                scores.append(scores_)
+
+    sumed_score = get_summed_scoring(scores)
+
+    assert sumed_score['n_total'] == len(all_results)
 
     with open(os.path.join(args.output_dir, "running_log.json"), 'w') as f:
         json.dump(all_results, f, indent=4)
 
     with open(os.path.join(args.output_dir, "score.json"), 'w') as f:
-        json.dump(score, f, indent=4)
+        json.dump(sumed_score, f, indent=4)

@@ -1,6 +1,6 @@
 from transformers import pipeline, AutoTokenizer
 import torch
-
+import pdb
 device = -1
 if torch.cuda.is_available():
     device = 0
@@ -34,6 +34,7 @@ def llama_completion(prompt):
     generated_text = generated_text.replace(prompt, "")
     stop = ['--', '\n', ';', '#']
     stop_index = len(generated_text)
+    # TODO is it ok?
     for i, c in enumerate(generated_text):
         if c in stop:
             stop_index = i

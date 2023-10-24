@@ -139,13 +139,7 @@ def eval1(running_log, test_set, turn=-1, use_gold=False, domain=""):
     return n_correct/n_total
 
 
-def eval2(running_log, test_set, turn=-1, use_gold=False, domain=""):
-    # turn and use_gold are for analysis purpose
-    # turn = -1 means evalute all dialogues
-    # turn = 0 means evaluate single-turn dialogues
-    # turn = 1 means evalute two-turn dialogues... etc.
-    # when use_gold = True, the context are gold context (for analysis purpose)
-
+def eval2(running_log, test_dict, use_gold=False, domain=""):
     # keep the slot values in domain
     def domain_filter(slot_values):
         in_domain_svs = {}
@@ -165,13 +159,9 @@ def eval2(running_log, test_set, turn=-1, use_gold=False, domain=""):
     total_acc = 0
     total_f1 = 0
 
-    for data_item, label_item in tqdm(zip(running_log, test_set)):
+    for data_item in tqdm(running_log):
 
-        if turn >= 0:
-            if data_item['turn_id'] != turn:
-                continue
-
-        if domain:
+        if domain:  # domain filter
             if domain not in data_item["domains"]:
                 continue
 
@@ -212,6 +202,11 @@ def eval2(running_log, test_set, turn=-1, use_gold=False, domain=""):
         # record current turn prediction
         prediction_recorder.add_state(data_item, all_slot_values)
 
+        label_item = test_dict[data_item['ID'] +
+                               '_' + str(data_item['turn_id'])]
+        assert data_item['ID'] == label_item['ID']
+        assert data_item['turn_id'] == label_item['turn_id']
+
         this_jga, this_acc, this_f1 = evaluate(
             all_slot_values, label_item['slot_values'])
 
@@ -242,6 +237,14 @@ def eval2(running_log, test_set, turn=-1, use_gold=False, domain=""):
     return n_correct/n_total
 
 
+def test_list_to_dict(test_set):
+    test_dict = {}
+    for item in test_set:
+        index = item['ID'] + '_' + str(item['turn_id'])
+        test_dict[index] = item
+    return test_dict
+
+
 if __name__ == "__main__":
 
     # read the running log
@@ -264,7 +267,9 @@ if __name__ == "__main__":
     # result = eval1(running_log, test_set, domain=domain)
     # score[f'{domain}_1'] = result
 
-    result = eval2(running_log, test_set, domain=domain)
+    test_dict = test_list_to_dict(test_set)
+    result = eval2(running_log, test_dict, domain=domain)
+    print('domain_JGA', result)
     score['domain_JGA'] = result
 
     with open(score_path, 'w') as f:
