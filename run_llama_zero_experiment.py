@@ -157,7 +157,7 @@ def run(test_set, turn=-1, use_gold=False):
             examples = retriever.item_to_nearest_examples(
                 modified_item, k=args.num_examples)
             if args.reranker:  # use reranker or not
-                examples, re_success, re_prompt, reasons = Reranker.rerank_best(
+                examples, re_success, re_prompt, reasons, examples_short = Reranker.rerank_best(
                     examples=examples, query=modified_item, k=args.num_re_examples)
 
                 n_success += re_success
@@ -234,12 +234,9 @@ def run(test_set, turn=-1, use_gold=False):
         if args.reranker:
             if args.cot:
                 data_item['reranker_reasons'] = reasons
-            try:
-                data_item['reranker_prompt'] = re_prompt.split("result : ")[0]
-                data_item['reranker_result'] = re_prompt.split("result : ")[1]
-            except:
                 data_item['reranker_prompt'] = re_prompt
-                data_item['reranker_result'] = re_prompt
+                data_item['reranker_examples'] = examples_short
+
             data_item['reranker_success'] = re_success
         all_result.append(data_item)
 
