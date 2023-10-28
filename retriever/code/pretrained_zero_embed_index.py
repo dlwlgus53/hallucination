@@ -5,27 +5,30 @@ import json
 import os
 import numpy as np
 from tqdm import tqdm
-import pdb 
+import pdb
 import argparse
 
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--target_domain', type=str, required=True)
+parser.add_argument('--input_file', type=str, required=True)
+parser.add_argument('--output_file', type=str, required=True)
+
 args = parser.parse_args()
 
 
 # Embedding model
 
 MODEL_NAME = 'sentence-transformers/all-mpnet-base-v2'
-SAVE_NAME = f'all_mpnet_base_v2_zero_{args.target_domain}'
+# SAVE_NAME = f'{args.output_file}'
 
 
 # ------ Configuration ends here ----------------
 
 
 # path to save indexes and results
-save_path = f"../expts/{SAVE_NAME}"
-os.makedirs(save_path, exist_ok=True)
+# save_path = f"../expts/{SAVE_NAME}"
+os.makedirs(args.output_file.replace("train.npy", ""), exist_ok=True)
 
 DEVICE = torch.device("cuda:0")
 CLS_Flag = False
@@ -36,6 +39,7 @@ tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 model = AutoModel.from_pretrained(MODEL_NAME)
 model.to(DEVICE)
 print("Finish load model")
+
 
 def mean_pooling(model_output, attention_mask):
     # First element of model_output contains all token embeddings
@@ -85,9 +89,9 @@ def read_MW_dataset(mw_json_fn, target_domain):
     # only care domain in test
     DOMAINS = ['hotel', 'restaurant', 'attraction', 'taxi', 'train']
     DOMAINS.remove(target_domain)
-    
+
     assert len(DOMAINS) == 4
-    
+
     with open(mw_json_fn, 'r') as f:
         data = json.load(f)
 
@@ -112,15 +116,18 @@ def read_MW_dataset(mw_json_fn, target_domain):
         # store the history in dictionary
         name = f"{turn['ID']}_turn_{turn['turn_id']}"
         dial_dict[name] = history
-        
+
     print('len of dict : ', len(dial_dict))
-    
+
     return dial_dict
 
 
-mw_train = read_MW_dataset("../../data/mw21_100p_train.json", args.target_domain)
-mw_dev = read_MW_dataset("../../data/mw21_100p_dev.json", args.target_domain)
-mw_test = read_MW_dataset("../../data/mw21_100p_test.json", args.target_domain)
+# mw_train = read_MW_dataset(
+#     "../../data/mw21_100p_train.json", args.target_domain)
+mw_train = read_MW_dataset(
+    args.input_file, args.target_domain)
+# mw_dev = read_MW_dataset("../../data/mw21_100p_dev.json", args.target_domain)
+# mw_test = read_MW_dataset("../../data/mw21_100p_test.json", args.target_domain)
 print("Finish reading data")
 
 
@@ -129,15 +136,16 @@ def store_embed(input_dataset, output_filename, forward_fn):
     with torch.no_grad():
         for k, v in tqdm(input_dataset.items()):
             outputs[k] = forward_fn(v).detach().cpu().numpy()
+    print("save in ", output_filename)
     np.save(output_filename, outputs)
     return
 
 
 # store the embeddings
-store_embed(mw_train, f"{save_path}/mw21_train_{SAVE_NAME}.npy",
+store_embed(mw_train, f"{args.output_file}",
             embed_single_sentence)
-store_embed(mw_dev, f"{save_path}/mw21_dev_{SAVE_NAME}.npy",
-            embed_single_sentence)
-store_embed(mw_test, f"{save_path}/mw21_test_{SAVE_NAME}.npy",
-            embed_single_sentence)
+# store_embed(mw_dev, f"{save_path}/mw21_dev_{SAVE_NAME}.npy",
+#             embed_single_sentence)
+# store_embed(mw_test, f"{save_path}/mw21_test_{SAVE_NAME}.npy",
+#             embed_single_sentence)
 print("Finish Embedding data")

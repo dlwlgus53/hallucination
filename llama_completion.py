@@ -15,16 +15,18 @@ class Llama_Generation:
         print(f"finish load {model_path}")
 
     def llama_check_over_length(self, prompt, report_len=False):
-        input_ids = tokenizer(prompt)['input_ids']
+        input_ids = self.tokenizer(prompt)['input_ids']
         if report_len:
             print(f"length is {len(input_ids)}")
         return len(input_ids) > self.max_length-self.max_new_length
 
-    def llama_completion(self, prompt, raw=0):
+    def llama_completion(self, prompt, max_new_length=0, raw=0):
         with torch.no_grad():
+            if max_new_length == 0:
+                max_new_length = self.max_new_length
             generated_text = self.generator(prompt, do_sample=True,
                                             early_stopping=True,
-                                            max_new_tokens=self.max_new_length,
+                                            max_new_tokens=max_new_length,
                                             temperature=1e-10,
                                             num_return_sequences=1)[0]['generated_text']
         generated_text = generated_text.replace(prompt, "")

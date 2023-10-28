@@ -20,7 +20,7 @@ def parsing_rerank_reasoning_result(result):
     result = result.replace("\n", "").strip()
     result = result.lower()
 
-    result = "index: " + result
+    # result = "index: " + result
     result = result.replace("[", "").replace("]", "").strip()
     result = result.replace(":", "").replace(",", "").strip()
 
@@ -30,6 +30,8 @@ def parsing_rerank_reasoning_result(result):
     if index_match:
         index = index_match.group(1)
         reason = re.sub(r'\d', '', result)
+        reason = reason[:reason.find("index")]
+        reason = reason[:reason.find(".")]
         reason = reason.replace("index", "").replace("reason", "").strip()
         success = 1
     else:
@@ -46,7 +48,7 @@ def parsing_rerank_result(result):
     result = result.replace("\n", "").strip()
     result = result.lower()
 
-    result = "index: " + result
+    # result = "index: " + result
     result = result.replace("[", "").replace("]", "").strip()
     result = result.replace(":", "").replace(",", "").strip()
 
@@ -67,6 +69,10 @@ class LlamaReranker(Reranker):
         super().__init__(model=model)
         self.overcheck = overcheck
         self.cot = cot
+        if cot == 1:
+            self.max_new_length = 512
+        else:
+            self.max_new_length = 16
 
     def rerank_best(self, examples, query, k):
         if self.cot:
@@ -94,8 +100,7 @@ class LlamaReranker(Reranker):
                 org_len = len(org_examples)
                 prompt = prompt_function(examples, query)
 
-            result = self.model(prompt, raw=1)
-
+            result = self.model(prompt, self.max_new_length, raw=1)
             success, index, reason = parsing_function(result)
             if not success:
                 break

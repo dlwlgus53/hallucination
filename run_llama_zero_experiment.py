@@ -9,7 +9,7 @@ from utils.typo_fix import typo_fix
 from config import CONFIG
 from utils.sql import sql_pred_parse, sv_dict_to_string
 from prompting import get_prompt, conversion, table_prompt
-
+from llama_completion import Llama_Generation
 from evaluate_metrics import evaluate
 import init
 import pdb
@@ -38,6 +38,7 @@ parser.add_argument('--num_examples', type=int, default=30,
                     help="number of examples to retrieve")
 parser.add_argument('--num_re_examples', type=int, default=5,
                     help="number of examples to retrieve")
+
 parser.add_argument('--short', type=int, default=0,
                     help="debugging mode")
 parser.add_argument('--reranker', type=int, default=0,
@@ -102,14 +103,15 @@ def run(test_set, turn=-1, use_gold=False):
                                    sampling_method="pre_assigned")
 
     if '7' in args.model_version:
-        from llama_completion_7b import llama_check_over_length, llama_completion
+        model_name = 'meta-llama/Llama-2-7b-chat-hf'
     elif '13' in args.model_version:
-        from llama_completion_13b import llama_check_over_length, llama_completion
+        model_name = 'meta-llama/Llama-2-13b-chat-hf'
     else:
         raise ValueError("model version not supported")
 
-    complete_fn = llama_completion
-    check_overlen_fn = llama_check_over_length
+    model = Llama_Generation(model_name)
+    complete_fn = model.llama_completion
+    check_overlen_fn = model.llama_check_over_length
 
     # turn and use_gold are for analysis purpose
     # turn = -1 means evaluate all dialogues
@@ -168,11 +170,13 @@ def run(test_set, turn=-1, use_gold=False):
                 data_item, examples=examples, given_context=predicted_context)
         # logger.info the retrieved examples (without the sql table)
         if args.verbose or n_total < 5:
+            logger.info("retrieved examples")
+            logger.info("re_success", re_success)
             logger.info(prompt_text.replace(conversion(table_prompt), ""))
+
         if re_success == 0:
             logger.warning("reranker failed")
             logger.warning(re_prompt)
-            pdb.set_trace()
 
         # record the prompt
         data_item['prompt'] = prompt_text
