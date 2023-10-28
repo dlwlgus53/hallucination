@@ -70,7 +70,7 @@ class LlamaReranker(Reranker):
         self.overcheck = overcheck
         self.cot = cot
         if cot == 1:
-            self.max_new_length = 512
+            self.max_new_length = 256
         else:
             self.max_new_length = 16
 

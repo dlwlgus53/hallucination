@@ -171,10 +171,9 @@ def run(test_set, turn=-1, use_gold=False):
         # logger.info the retrieved examples (without the sql table)
         if args.verbose or n_total < 5:
             logger.info("retrieved examples")
-            logger.info("re_success", re_success)
             logger.info(prompt_text.replace(conversion(table_prompt), ""))
 
-        if re_success == 0:
+        if args.reranker and re_success == 0:
             logger.warning("reranker failed")
             logger.warning(re_prompt)
 
